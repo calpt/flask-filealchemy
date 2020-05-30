@@ -2,7 +2,7 @@ from pathlib import Path
 
 from sqlalchemy.schema import Table
 
-from .common import parse_yaml_file
+from .common import ColumnMapping, parse_yaml_file
 
 
 class InvalidLoaderError(Exception):
@@ -13,9 +13,10 @@ class BaseLoader:
     """Base class for all Loader classes.
     """
 
-    def __init__(self, data_dir: Path, table: Table):
+    def __init__(self, data_dir: Path, table: Table, mapping: dict = {}):
         self.data_dir = data_dir
         self.table = table
+        self.mapping = mapping
 
         self.validate()
 
@@ -69,33 +70,45 @@ class YAMLDirectoryLoader(BaseLoader):
         return self.data_dir.joinpath(self.table.name)
 
     def extract_records(self, model):
-        for entry in self.data_path.iterdir():
+        for entry in self.data_path.glob('**/*'):
             if not entry.is_file():
                 continue
 
-            values = parse_yaml_file(
-                self.data_dir.joinpath(self.table.name).joinpath(entry.name)
-            )
+            values = parse_yaml_file(entry)
 
-            kwargs = {
-                column.name: values.get(column.name)
-                for column in self.table.columns
-            }
+            kwargs = {}
+            for column in self.table.columns:
+                mapping = self.mapping.get(column.name, None)
+                if mapping:
+                    if mapping == ColumnMapping.FILE_NAME:
+                        kwargs[column.name] = entry.stem
+                    elif mapping == ColumnMapping.FOLDER_NAME:
+                        kwargs[column.name] = entry.parent.name
+                    else:
+                        raise ValueError("Unknown column mapping '{}'".format(mapping))
+                else:
+                    value = values.get(column.name)
+                    if isinstance(value, list) or isinstance(value, dict):
+                        value = str(value)
+                    kwargs[column.name] = value
 
             yield model(**kwargs)
 
     def validate(self):
-        for file_ in self.data_path.iterdir():
+        for entry in self.data_path.glob('**/*'):
+            if not entry.is_file():
+                continue
+
             if not any(
-                ext for ext in self.extensions if file_.name.endswith(ext)
+                ext for ext in self.extensions if entry.name.endswith(ext)
             ):
                 raise InvalidLoaderError()
 
 
-def loader_for(data_dir: Path, table: Table):
+def loader_for(data_dir: Path, table: Table, mapping: dict = {}):
     for cls in (YAMLSingleFileLoader, YAMLDirectoryLoader):
         try:
-            loader = cls(data_dir, table)
+            loader = cls(data_dir, table, mapping=mapping)
         except InvalidLoaderError:
             pass
         else:

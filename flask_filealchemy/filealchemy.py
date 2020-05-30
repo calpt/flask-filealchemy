@@ -15,6 +15,7 @@ class FileAlchemy:
 
         self.data_dir = Path(self.app.config.get('FILEALCHEMY_DATA_DIR'))
         self.models = self.app.config.get('FILEALCHEMY_MODELS')
+        self.skip_no_model = self.app.config.get('FILEALCHEMY_SKIP_NO_MODEL')
 
         self.validate()
 
@@ -32,14 +33,17 @@ class FileAlchemy:
 
         with self.make_session() as session:
             for table in self.db.metadata.sorted_tables:
-                model = self.model_for(table)
+                model, mapping = self.model_for(table)
 
                 if not model:
-                    raise LoadError(
-                        _fmt_log('no model found for {}'.format(table.name))
-                    )
+                    if self.skip_no_model:
+                        continue
+                    else:
+                        raise LoadError(
+                            _fmt_log('no model found for {}'.format(table.name))
+                        )
 
-                loader = loader_for(self.data_dir, table)
+                loader = loader_for(self.data_dir, table, mapping=mapping)
 
                 if not loader:
                     raise LoadError(
@@ -73,5 +77,9 @@ class FileAlchemy:
 
     def model_for(self, table: Table):
         for model in self.models:
+            mapping = {}
+            if isinstance(model, tuple):
+                model, mapping = model
             if model.__tablename__ == table.name:
-                return model
+                return model, mapping
+        return None, None

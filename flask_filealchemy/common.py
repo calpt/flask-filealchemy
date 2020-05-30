@@ -1,4 +1,5 @@
 from collections.abc import Mapping, Sequence
+from enum import Enum
 
 from ruamel.yaml import YAML
 
@@ -9,6 +10,11 @@ def _fmt_log(message):
 
 class LoadError(Exception):
     pass
+
+
+class ColumnMapping(Enum):
+    FILE_NAME = 1
+    FOLDER_NAME = 2
 
 
 def parse_yaml_file(file_):
