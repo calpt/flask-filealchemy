@@ -13,10 +13,11 @@ class BaseLoader:
     """Base class for all Loader classes.
     """
 
-    def __init__(self, data_dir: Path, table: Table, mapping: dict = {}):
+    def __init__(self, data_dir: Path, table: Table, column_map: dict = {}, model_map: dict = {}):
         self.data_dir = data_dir
         self.table = table
-        self.mapping = mapping
+        self.column_map = column_map
+        self.model_map = model_map
 
         self.validate()
 
@@ -77,20 +78,33 @@ class YAMLDirectoryLoader(BaseLoader):
             values = parse_yaml_file(entry)
 
             kwargs = {}
-            for column in self.table.columns:
-                mapping = self.mapping.get(column.name, None)
-                if mapping:
-                    if mapping == ColumnMapping.FILE_NAME:
-                        kwargs[column.name] = entry.stem
-                    elif mapping == ColumnMapping.FOLDER_NAME:
-                        kwargs[column.name] = entry.parent.name
-                    else:
-                        raise ValueError("Unknown column mapping '{}'".format(mapping))
+            # iterate default mappings
+            for k, v in self.column_map.items():
+                if v == ColumnMapping.FILE_NAME:
+                    kwargs[k] = entry.stem
+                elif v == ColumnMapping.FOLDER_NAME:
+                    kwargs[k] = entry.parent.name
                 else:
-                    value = values.get(column.name)
+                    raise ValueError("Unknown column mapping '{}'".format(v))
+            # iterate all mappings in file
+            for k, value in values.items():
+                if k in self.table.columns.keys():
                     if isinstance(value, list) or isinstance(value, dict):
                         value = str(value)
-                    kwargs[column.name] = value
+                    kwargs[k] = value
+                # check if we have a table in our schema with this key as name
+                elif self.model_map and k in self.table.metadata.tables.keys() and isinstance(value, list):
+                    sub_table = self.table.metadata.tables[k]
+                    foreign_kwargs = {}
+                    # if the found table has foreign keys referencing the current table, try to populate these
+                    for const in sub_table.foreign_key_constraints:
+                        for self_key, foreign_key in zip(const.column_keys, const.elements):
+                            if foreign_key.references(self.table):
+                                foreign_key = foreign_key.column.name
+                                foreign_kwargs[self_key] = kwargs[foreign_key]
+                    for sub_kwargs in value:
+                        sub_kwargs.update(foreign_kwargs)
+                        yield self.model_map[k][0](**sub_kwargs)
 
             yield model(**kwargs)
 
@@ -105,10 +119,10 @@ class YAMLDirectoryLoader(BaseLoader):
                 raise InvalidLoaderError()
 
 
-def loader_for(data_dir: Path, table: Table, mapping: dict = {}):
+def loader_for(data_dir: Path, table: Table, column_map: dict = {}, model_map: dict = {}):
     for cls in (YAMLSingleFileLoader, YAMLDirectoryLoader):
         try:
-            loader = cls(data_dir, table, mapping=mapping)
+            loader = cls(data_dir, table, column_map=column_map, model_map=model_map)
         except InvalidLoaderError:
             pass
         else:

@@ -14,10 +14,20 @@ class FileAlchemy:
         self.db = db
 
         self.data_dir = Path(self.app.config.get('FILEALCHEMY_DATA_DIR'))
-        self.models = self.app.config.get('FILEALCHEMY_MODELS')
+        self.models = self._build_model_map(self.app.config.get('FILEALCHEMY_MODELS'))
         self.skip_no_model = self.app.config.get('FILEALCHEMY_SKIP_NO_MODEL')
+        self.map_nested = self.app.config.get('FILEALCHEMY_MAP_NESTED')
 
         self.validate()
+
+    def _build_model_map(self, models):
+        model_map = {}
+        for model in models:
+            mapping = {}
+            if isinstance(model, tuple):
+                model, mapping = model
+            model_map[model.__tablename__] = (model, mapping)
+        return model_map
 
     def validate(self):
         if not self.models:
@@ -43,7 +53,8 @@ class FileAlchemy:
                             _fmt_log('no model found for {}'.format(table.name))
                         )
 
-                loader = loader_for(self.data_dir, table, mapping=mapping)
+                model_map = self.models if self.map_nested else {}
+                loader = loader_for(self.data_dir, table, column_map=mapping, model_map=model_map)
 
                 if not loader:
                     raise LoadError(
@@ -76,10 +87,4 @@ class FileAlchemy:
         return self.data_dir.joinpath(table.name)
 
     def model_for(self, table: Table):
-        for model in self.models:
-            mapping = {}
-            if isinstance(model, tuple):
-                model, mapping = model
-            if model.__tablename__ == table.name:
-                return model, mapping
-        return None, None
+        return self.models.get(table.name, (None, None))
