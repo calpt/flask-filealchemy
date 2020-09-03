@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 from sqlalchemy.schema import Table
@@ -90,7 +91,7 @@ class YAMLDirectoryLoader(BaseLoader):
             for k, value in values.items():
                 if k in self.table.columns.keys():
                     if isinstance(value, list) or isinstance(value, dict):
-                        value = str(value)
+                        value = json.dumps(value, indent=4)
                     kwargs[k] = value
                 # check if we have a table in our schema with this key as name
                 elif self.model_map and k in self.table.metadata.tables.keys() and isinstance(value, list):
