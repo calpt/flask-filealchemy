@@ -94,7 +94,8 @@ class YAMLDirectoryLoader(BaseLoader):
                         value = json.dumps(value, indent=4)
                     kwargs[k] = value
                 # check if we have a table in our schema with this key as name
-                elif self.model_map and k in self.table.metadata.tables.keys() and isinstance(value, list):
+                elif self.model_map and k in self.table.metadata.tables.keys() and \
+                        (isinstance(value, list) or isinstance(value, dict)):
                     sub_table = self.table.metadata.tables[k]
                     foreign_kwargs = {}
                     # if the found table has foreign keys referencing the current table, try to populate these
@@ -103,9 +104,13 @@ class YAMLDirectoryLoader(BaseLoader):
                             if foreign_key.references(self.table):
                                 foreign_key = foreign_key.column.name
                                 foreign_kwargs[self_key] = kwargs[foreign_key]
-                    for sub_kwargs in value:
-                        sub_kwargs.update(foreign_kwargs)
-                        yield self.model_map[k][0](**sub_kwargs)
+                    if isinstance(value, list):
+                        for sub_kwargs in value:
+                            sub_kwargs.update(foreign_kwargs)
+                            yield self.model_map[k][0](**sub_kwargs)
+                    else:
+                        value.update(foreign_kwargs)
+                        yield self.model_map[k][0](**value)
 
             yield model(**kwargs)
 

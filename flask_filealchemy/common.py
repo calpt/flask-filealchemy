@@ -19,7 +19,7 @@ class ColumnMapping(Enum):
 
 def parse_yaml_file(file_):
     try:
-        with file_.open() as fd:
+        with file_.open(encoding="utf-8") as fd:
             data = fd.read()
 
         values = YAML(typ='safe').load(data)
